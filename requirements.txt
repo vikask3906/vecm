@@ -1,0 +1,27 @@
+# VECM Arbitrage System — Dependencies
+# Core math & data
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.10.0
+statsmodels>=0.14.0
+yfinance>=0.2.18
+
+# Machine Learning (Phase 5)
+hmmlearn>=0.3.0
+joblib>=1.3.0
+# Optimization (Phase 3)
+cvxpy>=1.4.0
+
+# Distributed pipeline (Phase 2)
+pyzmq>=25.0.0
+redis>=5.0.0
+
+# Visualization & analysis
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Testing
+pytest>=7.4.0
+
+# Environment
+python-dotenv>=1.0.0
