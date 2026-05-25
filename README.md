@@ -1,104 +1,141 @@
-# VECM Arbitrage System
+# VECM Arbitrage System 📈
 
-A production-grade **Vector Error Correction Model (VECM)** statistical arbitrage system for correlated equity baskets. Built in 5 phases with modular architecture.
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Overview
+A production-grade **Vector Error Correction Model (VECM)** statistical arbitrage engine for correlated equity baskets. Designed to programmatically identify, optimize, and trade mean-reverting spreads among cointegrated assets, minimizing market exposure while capturing statistical alpha.
 
-This system identifies and trades mean-reverting spreads among cointegrated equity baskets using:
-- **Johansen cointegration test** for rank detection and hedge ratio extraction
-- **VECM estimation** for error-correction speed and half-life computation
-- **Z-score based signal generation** with hysteresis and stop-loss
-- **CVXPY convex optimization** for constrained hedge weight computation
-- **Square-root market impact model** for realistic cost estimation
-- **Cointegration breakdown protocol** with auto-liquidation on rank drop
+---
 
-## Architecture
+## 🧠 Core Methodology
 
+This system departs from simple correlation (which is spurious and non-stationary) by relying on strict **Cointegration**.
+
+1. **Rank Detection**: Uses the **Johansen Cointegration Test** (Trace & Maximum Eigenvalue statistics) to detect the exact number of cointegrating relationships (the rank) within an $N$-asset basket.
+2. **Speed of Mean Reversion**: Estimates the **Vector Error Correction Model (VECM)** to compute the error-correction speed matrix ($\alpha$) and extracts the half-life of mean reversion.
+3. **Regime Detection**: Utilizes **Hidden Markov Models (HMM)** to detect market regimes, turning off the strategy during structural breaks or extreme volatility regimes.
+4. **Constrained Optimization**: Instead of raw eigenvectors, it uses **CVXPY** convex optimization to calculate bounded hedge weights, accounting for gross exposure limits and dynamically excluding halted or hard-to-borrow assets.
+5. **Execution Cost Modeling**: Incorporates a **Square-Root Market Impact** model alongside maker/taker fees and annualized borrow costs to simulate real-world slippage.
+
+---
+
+## 🏗 System Architecture
+
+The pipeline is fully decoupled and distributed, enabling live trading latency and robust backtesting.
+
+```mermaid
+graph TD
+    A[Market Data Provider / yfinance] -->|Raw Prices| B(Core Math Engine)
+    B -->|Johansen Test| C{Cointegrated?}
+    C -->|Yes| D[VECM Estimation]
+    C -->|No| Z[Reject Basket]
+    D -->|Beta Eigenvectors| E[CVXPY Hedge Optimizer]
+    E -->|Target Weights| F[Risk & Liquidity Engine]
+    F -->|Hard-to-borrow exclusions| E
+    F -->|Approved Allocations| G(ZMQ / Redis Pipeline)
+    G --> H[Z-Score Signal Generator]
+    H -->|Entry/Exit Signals| I[Execution Broker]
+    
+    subgraph Phase 5: HMM & Monitor
+    M[Rolling Johansen Retest] -.->|Rank Drop Detected| F
+    N[HMM Regime Oracle] -.->|Volatility Regime| F
+    end
 ```
-Phase 1 (core/)     → Johansen test, VECM, spread construction, signals
-Phase 2 (pipeline/) → ZeroMQ/Redis async pub-sub price feed
-Phase 3 (risk/)     → CVXPY hedge optimization, liquidity monitoring
-Phase 4 (backtest/) → Full backtester with fees, borrow costs, market impact
-Phase 5 (core/)     → Rolling cointegration monitor, breakdown protocol
+
+---
+
+## 📂 Project Structure
+
+```text
+vecm/
+├── core/             # Mathematical core (Johansen, VECM, HMM, Data Loaders)
+├── risk/             # CVXPY Optimizer, Liquidity Monitor, Position Rebalancer
+├── pipeline/         # Async pub/sub architecture (ZeroMQ / Redis)
+├── backtest/         # Vectorized & Event-driven backtesting, Transaction costs
+├── notebooks/        # Jupyter scratchpads for EDA and model tuning
+├── config.py         # Global parameters and thresholds
+└── drone_solver.py   # Sub-module routing logic
 ```
 
-## Quick Start
+---
 
-### Installation
+## 🚀 Quick Start
+
+### 1. Installation
+
+Clone the repository and install the dependencies:
 
 ```bash
+git clone https://github.com/vikask3906/vecm.git
+cd vecm
 pip install -r requirements.txt
 ```
 
-### Phase 1 — Core Math Engine
+> [!NOTE]
+> If using the **Redis** backend for the pipeline (Phase 2), ensure Redis is installed and running locally on port `6379`.
 
+### 2. Phase 1 — Core Math Engine
+Test the underlying math on historical data. Fetches data, runs ADF, Johansen, estimates VECM, and computes the spread.
 ```bash
 python run_phase1.py
 ```
 
-Runs the full pipeline: data fetch → ADF stationarity test → Johansen cointegration → VECM estimation → spread construction → z-score signals.
-
-### Phase 2 — Distributed Pipeline
-
+### 3. Phase 2 — Distributed Pipeline
+Demonstrates the ZeroMQ pub-sub architecture with historical price replay and live z-score signal generation.
 ```bash
 python run_phase2.py
 ```
 
-Demonstrates ZeroMQ pub-sub pipeline with historical price replay and live signal generation.
-
-### Phase 3 — Risk Engine
-
+### 4. Phase 3 — Risk Engine
+Shows CVXPY hedge optimization in action, simulating liquidity events (e.g., trading halts, hard-to-borrow status) and dynamically rebalancing.
 ```bash
 python run_phase3_demo.py
 ```
 
-Shows CVXPY hedge optimization with simulated liquidity events (halts, hard-to-borrow).
-
-### Full Backtest (Phase 4 + 5)
-
+### 5. Full Backtest (Phase 4 + 5)
+Executes the comprehensive backtester. Includes transaction fees, borrow costs, market impact slippage, and rolling cointegration breakdown monitoring.
 ```bash
 python run_backtest.py
 ```
 
-Runs the full backtest with:
-- Transaction costs (maker/taker fees, bid-ask spread)
-- Borrow costs for short positions
-- Square-root market impact
-- Cointegration breakdown monitoring and auto-liquidation
-- Tearsheet output (Sharpe, drawdown, Calmar, capacity analysis)
+---
 
-## Asset Universe
+## ⚙️ Configuration
 
-Default: Energy sector ETF + majors
-```
-XLE, XOM, CVX, COP, SLB, HAL, MRO, DVN
-```
-
-Modify `config.py` → `ASSETS` to change the basket.
-
-## Configuration
-
-All parameters are centralized in `config.py`:
+All hyperparameters are centralized in `config.py`. Key parameters include:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `ENTRY_ZSCORE` | 2.0 | Z-score entry threshold |
-| `EXIT_ZSCORE` | 0.5 | Z-score exit threshold |
-| `STOP_LOSS_ZSCORE` | 4.0 | Hard stop-loss z-score |
-| `ZSCORE_WINDOW` | 60 | Rolling z-score lookback (days) |
-| `INITIAL_CAPITAL` | $1M | Starting capital |
-| `MAKER_FEE_BPS` | 0.5 | Maker fee (basis points) |
-| `BORROW_COST_ANNUAL_BPS` | 50 | Annual short borrow cost (bps) |
-| `MONITOR_GRACE_PERIOD` | 5 | Days before breakdown liquidation |
+| `ASSETS` | `["COP", "CVX", "DVN"]` | Target equity basket |
+| `ENTRY_ZSCORE` | `2.0` | Z-score threshold to enter a position |
+| `EXIT_ZSCORE` | `0.2` | Z-score threshold to exit/take profit |
+| `STOP_LOSS_ZSCORE` | `4.0` | Hard stop-loss threshold |
+| `ZSCORE_WINDOW` | `60` | Rolling lookback for mean/std (days) |
+| `MAKER_FEE_BPS` | `0.5` | Maker fee execution cost |
+| `BORROW_COST_ANNUAL_BPS`| `50.0` | Cost to borrow shorted assets |
+| `IMPACT_COEFFICIENT` | `0.1` | Slippage scalar for square-root impact |
 
-## Tests
+> [!TIP]
+> To modify the strategy's sensitivity, adjust the `ENTRY_ZSCORE` and `ZSCORE_WINDOW` before modifying the underlying Johansen lags (`JOHANSEN_K_AR_DIFF`).
+
+---
+
+## 🧪 Testing
+
+Run the full pytest suite to validate the math, constraints, and architecture:
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-## Key Mathematical References
+---
 
-- **Johansen (1991)**: "Estimation and Hypothesis Testing of Cointegration Vectors in Gaussian Vector Autoregressive Models"
-- **Engle & Granger (1987)**: "Co-Integration and Error Correction"
-- **Almgren & Chriss (2001)**: "Optimal Execution of Portfolio Transactions"
+## 📚 Key Mathematical References
+
+- **Johansen, S. (1991)**: *"Estimation and Hypothesis Testing of Cointegration Vectors in Gaussian Vector Autoregressive Models"* (Econometrica)
+- **Engle, R. F., & Granger, C. W. J. (1987)**: *"Co-Integration and Error Correction: Representation, Estimation, and Testing"*
+- **Almgren, R., & Chriss, N. (2001)**: *"Optimal Execution of Portfolio Transactions"* (For market impact modeling)
+
+---
+> [!WARNING]
+> **Disclaimer**: This codebase is provided for research and educational purposes only. Statistical arbitrage strategies carry extreme risk, particularly regarding model breakdown, liquidity dry-ups, and short-squeeze scenarios. Do not run this live without rigorous paper trading and risk limits.
